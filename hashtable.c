@@ -1,267 +1,334 @@
-// Linked Hash Table implementation.
-// v1.0
-
-// The MIT License (MIT)
-//
-// Copyright (c) 2015 Adrian Bueno Jimenez  (adrian.buenoj@gmail.com)
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+/*******************************************************************************
+ * Linked Hash Table implementation.
+ *
+ * Author: Adrian Bueno (adrian.buenoj@gmail.com)
+ * License: MIT
+ * Github: github.com/adrian-bueno/hashtable
+ * Date: 1 July 2016
+ ******************************************************************************/
 
 #include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 
-struct hashnode_s{
-	char *key;
-	char *value;
-	struct hashnode_s *next;
+
+/**** FUNCTION POINTERS *******************************************************/
+
+/*
+ * Pointer to function that compare two keys.
+ * Return: (= 0) key1 = key2, (< 0) key1 < key2, (> 0) key1 > key2.
+ */
+typedef int (*fp_compare_keys)(void *key1, void *key2);
+
+/*
+ * Pointer to function that calculates the hash value of a key.
+ * Return: Hash value of key.
+ */
+typedef unsigned long (*fp_hashvalue)(void *key);
+
+/*
+ * Pointer to function that frees allocated memory of a key or value.
+ * You don't need it if you don't allocate memory.
+ */
+typedef void (*fp_delete)(void *key_or_value);
+
+
+/**** STRUCTURES **************************************************************/
+
+struct hashnode_s {
+    void *key;
+    void *value;
+    struct hashnode_s *next;
 };
 
-struct hashtable_s{
-	int size;
-	struct hashnode_s **table;
+struct hashtable_s {
+    unsigned long size;
+    struct hashnode_s **table;
+    fp_compare_keys compare;
+    fp_hashvalue hashvalue;
+    fp_delete key_delete;
+    fp_delete value_delete;
 };
 
 typedef struct hashnode_s hashnode_t;
 typedef struct hashtable_s hashtable_t;
 
+
+/**** HASHNODE FUNCTIONS ******************************************************/
+
 /*
- *
+ * Creates a new key-value node.
+ * Parameter "key" cannot be NULL.
+ * Return: Node created or NULL if an error ocurred.
  */
-hashnode_t *hashnode_create(char *key, char *value, hashnode_t *next){
+hashnode_t *hashnode_create(void *key, void *value, hashnode_t *next) {
 
-	hashnode_t *node = NULL;
+    hashnode_t *node = NULL;
 
-	node = (hashnode_t *) malloc (sizeof(hashnode_t));
-	if(node == NULL) return NULL;
+    if (key == NULL)
+        return NULL;
 
-	node->key = strdup(key);
-	if(node->key == NULL){
-		free(node);
-		return NULL;
-	}
-	node->value = strdup(value);
-	if(node->value == NULL){
-		free(node->key);
-		free(node);
-		return NULL;
-	}
+    node = (hashnode_t *) malloc (sizeof(hashnode_t));
+    if (node == NULL)
+        return NULL;
 
-	node->next = next;
+    node->key = key;
+    node->value = value;
+    node->next = next;
 
-	return node;
+    return node;
 }
 
 /*
- *
+ * Free allocated memory from one node. You should free key and value, if
+ * needed, before calling this function.
  */
-char *hashnode_get_key(hashnode_t *node){
-	if (node == NULL) return NULL;
-	return node->key;
+void hashnode_delete(hashnode_t *node) {
+
+    if (node == NULL)
+        return;
+
+    free(node);
+    return;
 }
 
-/*
- *
- */
-char *hashnode_get_value(hashnode_t *node){
-	if (node == NULL) return NULL;
-	return node->value;
-}
+
+/**** HASHTABLE FUNCTIONS *****************************************************/
 
 /*
- *
+ * Creates a new hash table.
+ * Parameter "size" must be greater than 0.
+ * Parameter "compare_function" cannot be NULL, is needed to compare keys.
+ * Parameter "hashvalue_function" cannot be NULL, is needed to calculate key
+ * position in the hash table.
+ * Parameter "key_delete_function" is used to free allocated memory for a key,
+ * this paremeter can be NULL if no memory was allocated with malloc or similar.
+ * Parameter "value_delete_function" is used to free allocated memory for a
+ * value, this paremeter can be NULL if no memory was allocated with malloc or
+ * similar.
+ * Return: NULL if error, pointer to hashtable on success.
  */
-hashnode_t *hashnode_get_next(hashnode_t *node){
-	if (node == NULL) return NULL;
-	return node->next;
-}
-
-/*
- * Free allocated memory from one node
- */
-void hashnode_delete(hashnode_t *node){
-
-	if(node == NULL) return;
-
-	free(node->key);
-	free(node->value);
-	free(node);
-	return;
-}
-
-/*
- * Free allocated memory from one node and the next ones in the list.
- */
-void hashnode_delete_all(hashnode_t *node){
-
-	if(node == NULL)
-		return;
-
-	hashnode_delete_all(node->next);
-	node->next = NULL;
-
-	hashnode_delete(node);
-
-	return;
-}
-
-/*
- * CHange the value of a node.
- */
-int hashnode_set_value(hashnode_t *node, char *value){
-
-	if(node == NULL) return -1;
-
-	free(node->value);
-
-	if(value != NULL){
-		node->value = strdup(value);
-		if(node->value == NULL)
-			return -1;
-	}
-	return 0;
-}
-
-/*
- * Searh in the list of nodes and returns the value if the node with that key exits.
- */
-char *hashnode_search_and_get(hashnode_t *node, char *key){
-
-	if(node == NULL || key == NULL) return NULL;
-
-	if(strcmp(node->key, key) == 0)
-		return node->value;
-
-	return hashnode_search_and_get(node->next, key);
-}
-
-/*
- * Search if the key exits, if not, it creates one node with that key and value.
- */
-hashnode_t *hashnode_search_and_set(hashnode_t *node, char *key, char *value){
-
-	if(key == NULL) return NULL;
-
-	if(node == NULL)
-		return hashnode_create(key, value, NULL);
-
-	if(strcmp(node->key, key) == 0){
-		hashnode_set_value(node, value);
-		return node;
-	}
-
-	node->next = hashnode_search_and_set(node->next, key, value);
-	return node;
-}
-
-/*
- *
- */
-hashtable_t *hashtable_create(int size){
+ hashtable_t *hashtable_create(unsigned long size,
+                               fp_compare_keys compare_function,
+                               fp_hashvalue hashvalue_function,
+                               fp_delete key_delete_function,
+                               fp_delete value_delete_function) {
 
     hashtable_t *hashtable = NULL;
     int i;
 
-    if(size < 1) return NULL;
+    if (size < 1 || compare_function == NULL || hashvalue_function == NULL)
+        return NULL;
 
     hashtable = (hashtable_t *) malloc (sizeof(hashtable_t));
-    if(hashtable == NULL) return NULL;
+    if (hashtable == NULL)
+        return NULL;
 
     hashtable->size = size;
     hashtable->table = (hashnode_t **) malloc (size * sizeof(hashnode_t*));
-    if(hashtable->table == NULL) return NULL;
+    if (hashtable->table == NULL)
+        return NULL;
 
-    for(i = 0; i < size; i++)
+    for (i = 0; i < size; i++)
         hashtable->table[i] = NULL;
+
+    hashtable->compare = compare_function;
+    hashtable->hashvalue = hashvalue_function;
+    hashtable->key_delete = key_delete_function;
+    hashtable->value_delete = value_delete_function;
 
     return hashtable;
 }
 
+
 /*
- * Using djb2 algorithm by Dan Bernstein
+ * Calculates in which position of the hash table the key goes.
+ * Return: Calculated position.
  */
-unsigned long get_string_hash_value(char *str){
+unsigned long hashtable_calculate_key_position(hashtable_t *hashtable, void *key){
 
-	unsigned long hash = 5381;
-	int c;
-
-	while ((c = *str++))
-		hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-
-	return hash;
+    return hashtable->hashvalue(key) % hashtable->size;
 }
 
 /*
- *
+ * If the key doesn't exist in the hash table a new key-value pair is introduced
+ * into the hash table, if it exist, it replaces the value with the one passed
+ * as parameter.
+ * Parameter "value" can be NULL.
+ * Return: 0 on success, -1 on error.
  */
-unsigned long hashtable_calculate_key_position(hashtable_t *hashtable, char *key){
-
-    return get_string_hash_value(key) % hashtable->size;
-}
-
-/*
- *
- */
-int hashtable_set_key_value(hashtable_t *hashtable, char *key, char *value){
+int hashtable_set(hashtable_t *hashtable, void *key, void *value) {
 
     unsigned long key_pos = 0;
+    hashnode_t *node = NULL;
 
-    if(hashtable == NULL || key == NULL) return -1;
+    if (hashtable == NULL || key == NULL)
+        return -1;
 
     key_pos = hashtable_calculate_key_position(hashtable, key);
 
-	hashtable->table[key_pos] = hashnode_search_and_set(hashtable->table[key_pos], key, value);
-	if(hashtable->table[key_pos] == NULL)
-		return -1;
+    node = hashtable->table[key_pos];
 
-	return 0;
+    // First position of list != NULL
+    while (node != NULL) {
+        if (hashtable->compare(key, node->key) == 0) {
+
+            if(hashtable->value_delete != NULL)
+                hashtable->value_delete(node->value);
+
+            node->value = value;
+            return 0;
+        }
+        else if (node->next == NULL) {
+            node->next = hashnode_create(key, value, NULL);
+            if(node->next == NULL)
+                return -1;
+            return 0;
+        }
+        else {
+            node = node->next;
+        }
+    }
+
+    //First position of list == NULL
+    node = hashnode_create(key, value, NULL);
+    if(node == NULL)
+        return -1;
+    hashtable->table[key_pos] = node;
+    return 0;
 }
 
 /*
- *
+ * Gets the value associated to a key.
+ * Return: NULL on error, value on success.
  */
-char *hashtable_get_value(hashtable_t *hashtable, char *key){
+void *hashtable_get(hashtable_t *hashtable, void *key){
 
     unsigned long key_pos = 0;
+    hashnode_t *node = NULL;
 
-	if(hashtable == NULL || key == NULL) return NULL;
+    if (hashtable == NULL || key == NULL)
+        return NULL;
 
-	key_pos = hashtable_calculate_key_position(hashtable, key);
+    key_pos = hashtable_calculate_key_position(hashtable, key);
 
-	return hashnode_search_and_get(hashtable->table[key_pos], key);
+    node = hashtable->table[key_pos];
+
+    while (node != NULL) {
+        if (hashtable->compare(key, node->key) == 0) {
+            return node->value;
+        }
+        else {
+            node = node->next;
+        }
+    }
+
+    return NULL;
 }
 
 /*
- *
+ * Deletes a key and its associated value from a hash table.
+ * Return: -1 on error, 0 on success.
  */
-void hashtable_delete(hashtable_t *hashtable){
+int hashtable_delete_key(hashtable_t *hashtable, void *key) {
 
+    unsigned long key_pos = 0;
+    hashnode_t *node = NULL;
+    hashnode_t *node_aux = NULL;
+
+    if (hashtable == NULL || key == NULL)
+        return -1;
+
+    key_pos = hashtable_calculate_key_position(hashtable, key);
+
+    node = hashtable->table[key_pos];
+
+    // First position in list
+    if (node != NULL && hashtable->compare(key, node->key) == 0) {
+        hashtable->table[key_pos] = node->next;
+
+		if (hashtable->key_delete != NULL)
+			hashtable->key_delete(node->key);
+		if (hashtable->value_delete != NULL)
+			hashtable->value_delete(node->value);
+
+        hashnode_delete(node);
+        return 0;
+    }
+
+    // Other position in list
+    while (node != NULL) {
+
+        node_aux = node;
+        node = node->next;
+
+        if (hashtable->compare(key, node->key) == 0) {
+            node_aux->next = node->next->next;
+
+            if (hashtable->key_delete != NULL)
+    			hashtable->key_delete(node->key);
+    		if (hashtable->value_delete != NULL)
+    			hashtable->value_delete(node->value);
+
+            hashnode_delete(node);
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * Frees all allocated memory in a hash table.
+ */
+void hashtable_delete(hashtable_t *hashtable) {
+
+    hashnode_t *node = NULL;
+    hashnode_t *node_aux = NULL;
     int i;
 
-    if(hashtable == NULL) return;
+    if (hashtable == NULL)
+        return;
 
-	//delete all possible lists
-    for(i = 0; i < hashtable->size; i++)
-		hashnode_delete_all(hashtable->table[i]);
+    for (i = 0; i < hashtable->size; i++) {
+        node = hashtable->table[i];
 
-	free(hashtable->table);
-	free(hashtable);
+        //delete all possible lists
+        while (node != NULL) {
+            node_aux = node;
+            node = node->next;
+
+            if (hashtable->key_delete != NULL)
+    			hashtable->key_delete(node_aux->key);
+    		if (hashtable->value_delete != NULL)
+    			hashtable->value_delete(node_aux->value);
+
+            hashnode_delete(node_aux);
+			node_aux = NULL;
+        }
+    }
+
+    free(hashtable->table);
+    free(hashtable);
 
     return;
+}
+
+
+/**** CALCULATE HASH VALUE FUNCTIONS ******************************************/
+
+/*
+ * Calculates the hash value of a string using djb2 algorithm by Dan Bernstein.
+ * Return: Hash value of string, if parameter "string" is NULL it returns 0.
+ */
+unsigned long string_hash_value(void *string) {
+
+    unsigned long hash = 5381;
+    int c;
+
+    if (string == NULL)
+        return 0;
+
+    while ((c = *((char*)string++)))
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+
+    return hash;
 }
